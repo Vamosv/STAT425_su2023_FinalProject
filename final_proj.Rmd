@@ -1,0 +1,153 @@
+---
+title: "Final Project EDA"
+author: "Andrea Cui"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+
+firedata <- read.csv("forestfires.csv")
+firedata <- as.data.frame(firedata)
+
+# Load the necessary packages
+library(dplyr)
+library(ggplot2)
+
+# Load the dataset
+data <- read.csv("forestfires.csv")
+
+# View the first few rows of the dataset
+head(data)
+
+# Get a summary of the dataset
+summary(data)
+
+```
+
+Data Visualizations:
+```{r}
+# Histogram for the FFMC variable
+ggplot(data, aes(x=FFMC)) + 
+  geom_histogram(fill='blue', color='black') +
+  labs(title="FFMC Distribution", x="FFMC", y="Count")
+
+# Boxplot for temperature
+ggplot(data, aes(y=temp)) + 
+  geom_boxplot(fill='blue', color='black') +
+  labs(title="Temperature Boxplot", x="", y="Temperature")
+
+
+```
+
+```{r}
+ggplot(data, aes(x=temp, y=area)) + 
+  geom_point() +
+  labs(title="Scatterplot of Temperature vs Burned Area", x="Temperature", y="Burned Area")
+
+```
+
+```{r}
+# Histogram for the log-transformed area
+ggplot(data, aes(x=log(area + 1))) + 
+  geom_histogram(fill='blue', color='black') +
+  labs(title="Log-transformed Burned Area Distribution", x="log(area+1)", y="Count")
+# In the code above, I added 1 to the area before taking the logarithm to avoid 
+# undefined values since log(0) is not defined.
+```
+
+```{r}
+# Load required package
+library(corrplot)
+
+# Compute the correlation matrix
+correlationMatrix <- cor(data[,sapply(data, is.numeric)])
+
+# Generate the correlation plot
+corrplot(correlationMatrix, method = "circle")
+
+```
+
+```{r}
+# Check for missing values
+sapply(data, function(x) sum(is.na(x)))
+
+```
+
+
+Comparisons Between Variables:
+```{r}
+
+# Boxplot of Temperature across Different Months
+ggplot(data, aes(x=month, y=temp, fill=month)) + 
+  geom_boxplot() +
+  labs(title="Boxplot of Temperature across Different Months", x="Month", y="Temperature")
+
+# Barplot of Burned Area across Different Days
+ggplot(data, aes(x=day, y=area, fill=day)) + 
+  geom_bar(stat="identity") +
+  labs(title="Barplot of Burned Area across Different Days", x="Day", y="Burned Area")
+
+# Scatterplot of Burned Area and Wind with respect to different days of the week
+ggplot(data, aes(x=wind, y=area, color=day)) + 
+  geom_point(alpha=0.5) +
+  labs(title="Scatterplot of Burned Area and Wind across Different Days", x="Wind", y="Burned Area")
+
+```
+
+pair plots:
+```{r}
+# Load required package
+library(GGally)
+
+# Select numerical variables to avoid clutter
+data_num <- data[, sapply(data, is.numeric)]
+
+# Generate pairs plot
+ggpairs(data_num)
+
+```
+
+Density Plots:
+```{r}
+# Density plot of Temperature
+ggplot(data, aes(x=temp)) + 
+  geom_density(fill='blue') +
+  labs(title="Density plot of Temperature", x="Temperature")
+
+# Density plot of Wind Speed
+ggplot(data, aes(x=wind)) + 
+  geom_density(fill='blue') +
+  labs(title="Density plot of Wind Speed", x="Wind Speed")
+
+```
+
+Interactions Between Categorical and Continuous Variables:
+```{r}
+# Boxplot of temperature grouped by months
+ggplot(data, aes(x=month, y=temp, fill=month)) + 
+  geom_boxplot() +
+  labs(title="Boxplot of Temperature Grouped by Month", x="Month", y="Temperature")
+
+# Boxplot of wind speed grouped by day
+ggplot(data, aes(x=day, y=wind, fill=day)) + 
+  geom_boxplot() +
+  labs(title="Boxplot of Wind Speed Grouped by Day", x="Day", y="Wind Speed")
+
+```
+
+Frequency Counts of Categorical Variables:
+```{r}
+# Frequency counts of months
+ggplot(data, aes(x=month)) + 
+  geom_bar(fill='blue') +
+  labs(title="Frequency Counts of Months", x="Month", y="Count")
+
+# Frequency counts of days
+ggplot(data, aes(x=day)) + 
+  geom_bar(fill='blue') +
+  labs(title="Frequency Counts of Days", x="Day", y="Count")
+
+```
