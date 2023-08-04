@@ -1,0 +1,587 @@
+---
+title: "FinalProject_Team5_EDA"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-07-24"
+---
+
+```{r}
+
+rm(list = ls()) # clear all variables in the workspace
+library(ggplot2)
+library(dplyr)
+#library(lattice)
+library(cowplot)
+#library(reshape2)
+library(RColorBrewer)
+library(GGally)
+library(car)
+library(caret)
+library(MASS)
+library(moments)
+library(stats)
+library(corrplot)
+library(lmtest)
+
+
+# Convert the X and Y variables to categorical variables
+forestfires = read.csv("forestfires.csv") 
+forestfires$X = factor(forestfires$X)
+forestfires$Y = factor(forestfires$Y)
+
+# Divide the data set into training data and testing data, and the ratio between two subgroup data is 0.8:0.2.
+
+#trainIndex = createDataPartition(forestfires$area, p = 0.8, list = FALSE)
+#train_data = forestfires[trainIndex, ]
+#test_data = forestfires[-trainIndex, ]
+```
+
+# Univariate analysis
+## (A) Categorical data
+```{r}
+
+totalfires = nrow(forestfires) # total number of observations
+
+boxcox(forestfires$area + 1 ~ 1, lambda = seq(-1, 0, 0.005))
+
+# Generate the kernel density curve of burned area
+
+par(mfrow = c(2,2))
+
+xdata = forestfires$area
+plot(density(xdata),xlab = "Area", ylab = "Density",main = "Kernal density curve of area", lwd = 2)
+boxplot(xdata,xlab = "Area", ylab = "Density",main = "Boxplot of area", lwd = 2)
+sk1 = skewness(xdata)
+sprintf("Skewness of the area: %.2f",  sk1)
+
+xdata2 = log(forestfires$area+1)
+plot(density(xdata2),xlab = "Area", ylab = "Density",main = "Kernal density curve of log(area+1)", lwd = 2)
+boxplot(xdata2,xlab = "Area", ylab = "Density",main = "Boxplot of log(area+1)", lwd = 2)
+sk2 = skewness(xdata2)
+sprintf("Skewness of the area: %.2f",  sk2)
+
+boxcox(xdata+1~ 1, lambda = seq(-1, 0, 0.005))
+
+```
+## (A) Area vs. categorical variables
+
+```{r}
+# Create a new categorical variable representing the severity of the fires, based on the values of burned area
+# No damage: area == 0
+# Low damage: 0 < area < 10
+# Moderate damage: 10 < area < 100
+# High damage: area > 100
+
+cut_points = c(-Inf, 0.00001, 10, 100, Inf)
+severity_labels = c("No damage", "Low", "Moderate", "High")
+severity = cut(forestfires$area, breaks = cut_points, labels = severity_labels, right = FALSE)
+forestfires$severity = severity
+
+# Group the data by X or Y coordinates
+fires_X = forestfires %>%
+  group_by(X,severity) %>%
+  summarize(fires_count = n())
+fires_X$severity = factor(fires_X$severity, levels = rev(severity_labels))
+
+fires_Y = forestfires %>%
+  group_by(Y,severity) %>%
+  summarize(fires_count = n()) 
+fires_Y$severity = factor(fires_Y$severity, levels = rev(severity_labels))
+
+# Generate barplots of fires vs. X or fires vs. Y
+par(mfrow=c(1,2))
+h1 = ggplot(fires_X, aes(x = X, y = fires_count, fill = severity)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "X", y = "Count", title = "Fires vs. X") +
+  scale_fill_discrete(name = "Severity")+
+  scale_x_discrete(limits = c("1", "2", "3", "4", "5", "6", "7","8","9"),
+                   labels = c("1", "2", "3", "4", "5", "6", "7","8","9"),) + 
+  scale_y_continuous(name = "Count") +
+  scale_fill_manual(values = brewer.pal(n = 7, name = 'RdGy'), name = "Severity") # use customized colors
+h2 = ggplot(fires_Y, aes(x = Y, y = fires_count, fill = severity)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Y", y = "Count", title = "Fires vs. Y") +
+  scale_fill_discrete(name = "Severity")+
+  scale_x_discrete(limits = c("1", "2", "3", "4", "5", "6", "7","8","9"),
+                   labels = c("1", "2", "3", "4", "5", "6", "7","8","9"),) +
+  scale_y_continuous(name = "Count") +
+  scale_fill_manual(values = brewer.pal(n = 7, name = 'RdGy'), name = "Severity") # use customized colors
+
+# Group the data by month or day
+severity_month <- forestfires %>%
+  group_by(month,severity) %>%
+  summarise(count = n())
+severity_month$severity <- factor(severity_month$severity, levels = rev(severity_labels))
+severity_day <- forestfires %>%
+  group_by(day,severity) %>%
+  summarise(count = n())
+severity_day$severity <- factor(severity_day$severity, levels = rev(severity_labels))
+
+# Generate barplots of fires vs. month
+h3 = ggplot(severity_month, aes(x = month, y = count, fill = severity)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Month", y = "Count", title = "Fires in each month") +
+  scale_fill_discrete(name = "Severity")+
+  scale_x_discrete(limits = c("jan", "feb", "mar", 
+                             "apr", "may", "jun", 
+                             "jul","aug","sep",
+                             "oct","nov","dec"),
+                   labels = c("Jan", "Feb", "Mar", 
+                             "Apr", "May", "June", 
+                             "July","Aug","Sept",
+                             "Oct","Nov","Dec"),) + # plot the data in chronological order
+  scale_y_continuous(name = "Count",
+                       sec.axis = sec_axis(~./totalfires, 
+                                           name="Percentage")) +
+  scale_fill_manual(values = brewer.pal(n = 7, name = 'RdGy'), name = "Severity") # use customized colors
+# Generate barplots of fires vs. day
+h4 = ggplot(severity_day, aes(x = day, y = count, fill = severity)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Day", y = "Count", title = "Fires in different day") +
+  scale_fill_discrete(name = "Severity")+
+  scale_x_discrete(limits = c("mon", "tue", "wed", 
+                             "thu", "fri", "sat", 
+                             "sun"),
+                   labels = c("Mon", "Tue", "Wed", 
+                             "Thu", "Fri", "Sat", 
+                             "Sun"),) + # plot the data in chronological order
+  scale_y_continuous(name = "Count",
+                       sec.axis = sec_axis(~./totalfires, 
+                                           name="Percentage")) +
+  scale_fill_manual(values = brewer.pal(n = 7, name = 'RdGy'), name = "Severity") # use customized colors
+
+plot_grid(h1, h2, h3, h4, labels = c( 'A', 'B','C','D'), label_size = 12) # Combine four plots to one figure
+
+
+
+
+```
+```{r}
+# Create a new categorical variable called season with two levels: summer and others
+
+forestfires$season = ifelse(forestfires$month %in% c("jun", "jul", "aug","sep"), "summer", "others")
+
+severity_season <- forestfires %>%
+  group_by(season,severity) %>%
+  summarise(count = n())
+severity_season$severity <- factor(severity_season$severity, levels = rev(severity_labels))
+
+ggplot(severity_season, aes(x = season, y = count, fill = severity)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Season", y = "Count", title = "Fires in summer or other seasons") +
+  scale_fill_discrete(name = "Severity")+
+  scale_y_continuous(name = "Count",
+                       sec.axis = sec_axis(~./totalfires, 
+                                           name="Percentage")) +
+  scale_fill_manual(values = brewer.pal(n = 7, name = 'RdGy'), name = "Severity") # use customized colors
+
+```
+
+## (B) Area vs. continous variable
+
+### (i) Single variable
+
+```{r}
+realfires = forestfires[-which(forestfires$area==0),]
+ghostfires = forestfires[which(forestfires$area==0),]
+
+numerical_vars = forestfires[, sapply(forestfires, is.numeric)]
+numerical_names = names(numerical_vars)
+realfires_num = numerical_vars[-which(numerical_vars$area==0),]
+ghostfires_num = numerical_vars[which(numerical_vars$area==0),]
+
+par(mfrow = c(3, 3))
+for (i in 1:(ncol(realfires_num)-1) )
+{
+  title1 = paste("KDE plot of " , numerical_names[i] )
+  kde1 = density(realfires_num[,i])
+  kde2 = density(ghostfires_num[,i])
+  plot(kde1, main = title1, xlab = numerical_names[i], col = "black",lwd = 2)
+  lines(kde2,col = "red", lwd = 2)
+}
+
+
+par(mfrow = c(3, 3))
+for (i in 1:(ncol(realfires_num)-1) )
+{
+  title1 = paste("Box-Cox transformation of  " , numerical_names[i] )
+  boxcox(realfires_num[,i]+1~ 1, lambda = seq(-1,2))
+}
+
+par(mfrow = c(3, 3))
+for (i in 1:(ncol(realfires_num)-1))
+{
+  title2 = paste("Box plot of " , numerical_names[i] )
+  boxdata1 = realfires_num[,i]
+  boxplot(boxdata1, main = title2, xlab = numerical_names[i], lwd = 2)
+
+}
+
+par(mfrow = c(3, 3))
+for (i in 1:(ncol(ghostfires_num)-1))
+{
+  title2 = paste("Box plot of " , numerical_names[i] )
+  boxdata2 = ghostfires_num[,i]
+  boxplot(boxdata2, main = title2, xlab = numerical_names[i], lwd = 2)
+}
+
+# Remove the data point with the z-score of FFMC greater than 3
+z_scores_ffmc = scale(realfires$FFMC)
+realfires = realfires[abs(z_scores_ffmc) <= 3,]
+plot(density(realfires$FFMC))
+
+# Four data points have been removed and the kernel density curved has been plotted in subplot-9
+```
+## (ii) area vs. numerical variables
+
+```{r}
+# Remove the outliers based on the values of FFMC
+z_scores_ffmc = scale(forestfires$FFMC)
+forestfires = forestfires[abs(z_scores_ffmc) <= 3,]
+plot(density(realfires$FFMC))
+
+forestfires_names = names(forestfires)
+data_copy = forestfires
+data_copy$severity <- factor(data_copy$severity, levels = rev(severity_labels)) # sort out the data according to the severity of fires
+
+# Plot log-transformed area vs. individual continous variables
+for (x_var in numerical_names) {
+  if ( x_var == 'area' || x_var == "rain"){
+    next
+  }
+  else{
+ggplot(data_copy, aes(x =  get(x_var), y = log(area+1), color = severity)) +
+    geom_point() +
+    labs(title = paste("Log-transformed area vs ", x_var),x = x_var,y = "Log-transformed area") +
+    scale_color_manual(values = brewer.pal(n = 7, name = 'RdGy'), name = "Severity") # use customized colors
+}
+}
+
+# Generate the correlation map
+CorrMatrix = cor(numerical_vars)
+corrplot(CorrMatrix, method = 'color')
+for (i in 1:nrow(CorrMatrix)) {
+  for (j in 1:ncol(CorrMatrix)) {
+    cov_val = round(CorrMatrix[i, j],2)
+    text(i, 10-j, labels = cov_val, col = "black", cex = 0.8)
+  }
+}
+
+```
+
+# Section 3 Methodology
+
+## 3.1 Simple model: multiple linear regression
+
+```{r}
+
+# Divide the realfires data into train and test data
+trainIndex = createDataPartition(realfires$area, p = 0.8, list = FALSE)
+train_data = realfires[trainIndex, ]
+test_data = realfires[-trainIndex, ]
+
+```
+```{r}
+# Fit a linear regression to the log_transformed area with all unchanged predictors 
+# dataset = train_data
+
+model_full_all = lm(log(area+1) ~.-severity-season , data = train_data)
+summary(model_full_all)
+anova(model_full_all)
+par(mfrow = c(2,2))
+plot(model_full_all)
+
+boxcox(model_full_all)
+
+model_full_all02 = lm(log(area+1)^0.5 ~.-severity-season , data = train_data)
+summary(model_full_all02)
+anova(model_full_all02)
+par(mfrow = c(2,2))
+plot(model_full_all02)
+
+bptest(model_full_all)
+```
+
+Although box-cox suggests a square-root transformation of the response, we did found adequate evidence of non-normality variance,. Therefore, we will discard the square-root transformation and keep the log-transformed area at this moment.
+
+```{r}
+#rm(model_full_all02)
+# check the collinearity of predictors
+vif_output = vif(model_full_all)
+print(vif_output)
+
+```
+
+Looking at the output of vif function, we can read that the variable DC has a high generalized vif, indicating a high correlation of it with other predictors in the model. Let's eliminate this variable to refit a model and compare the reduced model with the full model.
+
+```{r}
+model_reduced = lm(log(area+1)~.- severity-season-DC, data = train_data)
+anova(model_reduced,model_full_all)
+```
+
+Here, it looks like we have a contradictory conclusion and we can't fix the collinearity problem by simply discarding the variable. We will have to consider otehr methods like principle component analysis (PCA), ridge regression and etc.
+
+Now, let's fix the skewness of FFMC and RH
+```{r}
+par(mfrow = c(1,2))
+boxcox(train_data$RH~1)
+boxcox(train_data$FFMC~1,lambda = c(-20,20))
+
+skewness(train_data$FFMC)
+skewness(sqrt(train_data$FFMC))
+skewness(log(train_data$FFMC))
+skewness(train_data$FFMC^10)
+
+plot(density(train_data$FFMC^10))
+
+model_full_all02 = lm(log(area+1)~.-severity-season+log(RH) ,data = train_data)
+anova(model_full_all,model_full_all02)
+
+model_full_all03 = lm(log(area+1)~.-severity-season-RH+log(RH) ,data = train_data)
+model_full_all04 = lm(log(area+1)~.-severity-season-RH+ I(1/RH) ,data = train_data)
+model_full_all05 = lm(log(area+1)~.-severity-season+ I(1/RH) ,data = train_data)
+anova(model_full_all05,model_full_all)
+
+summary(model_full_all03)$r.square
+summary(model_full_all04)$r.square
+summary(model_full_all)$r.square
+
+model_full_all06 = lm(log(area+1) ~.- severity-season-RH+I(1/RH) - FFMC+ poly(FFMC, degree = 20), data = train_data)
+
+model_updated = model_full_all04 # the model that has best performance is the model that replace RH with 1/RH
+```
+
+```{r}
+rm(model_full_all02)
+rm(model_full_all03)
+rm(model_full_all04)
+rm(model_full_all05)
+rm(model_full_all06)
+
+prediction = predict(model_updated,newdata = test_data)
+
+plot(log(test_data$area+1),prediction,xlim = c(0,6),ylim = c(0,6))
+lines(0:6, 0:6, type = "l", col = "red")
+
+rmse = sqrt(mean((log(test_data$area+1) - prediction)^2))
+rmse
+
+```
+# transform the numerical variable according to the results of box-cox 
+
+for (i in 1:(ncol(numerical_vars)-1) )
+{
+  title1 = paste("Box-Cox transformation of  " , numerical_names[i] )
+  boxcox(numerical_vars[,i]+1~ 1, lambda = seq(0,20))
+}
+FFMC = forestfires$FFMC
+DMC = forestfires$DMC^0.5
+DC = forestfires$DC^1.5
+ISI = forestfires$ISI^0.5
+temp = forestfires$temp
+RH = log(forestfires$RH)
+wind = forestfires$wind^0.5
+area = forestfires$area
+X = forestfires$X
+Y = forestfires$Y
+season = forestfires$season
+
+fires_boxcox = data.frame(FFMC = FFMC, DMC = DMC, DC = DC, ISI = ISI, temp = temp,
+                          RH = RH, wind = wind, area = area, X = X, Y = Y, season = season)
+nonzero_boxcox = fires_boxcox[-which(fires_boxcox$area==0),]
+
+
+# The full model that include all non-transformed variables
+model1 = lm(log(area+1)^0.5 ~. -severity-season, data = realfires)
+summary(model1)
+par(mfrow =c(2,2))
+plot(model1)
+anova(model1)
+
+```
+```{r}
+model2 = lm(log(area+1)^0.5 ~. -severity-season  -day, data = nonzero)
+summary(model2)
+anova(model2,model1)
+
+
+model3 = lm(log(area+1)^0.5 ~. -severity-season-day  -month+season, data = nonzero)
+summary(model3)
+anova(model3,model1)
+```
+
+
+
+# Multivariate analysis
+
+```{r}
+#ggplot( ) +
+ # geom_point(alpha = 0.7) +  # Use alpha to adjust point transparency (optional)
+ # geom_smooth(method = 'lm', se = FALSE, color = 'black', alpha = 0.2) +  # Add regression lines (optional)
+  #ggpairs(forestfires, mapping = aes(color = severity,size = 0.01), 
+  #      lower = list(continuous = wrap("points", alpha = 0.5)),
+  #      upper = list(continuous = wrap("points", alpha = 0.5)),
+  #      diag = list(continuous = wrap("densityDiag", alpha = 0.5)))+
+  #scale_color_manual(values = brewer.pal(n = 9, name = 'RdGy'), name = "Severity") # use customized colors
+plot(forestfires)
+```
+
+
+
+Preparing the data for modeling
+
+```{r}
+
+# Perform transformation on FFMC, ISI, rain and area to minimize the effect of ourliers
+
+FFMC_log = log(forestfires$FFMC)
+ISI_log = log(forestfires$ISI)
+rain_log = log(forestfires$rain + 1) # +1 to avoid infinite log(rain)
+area_log = log(forestfires$area + 1) # +1 to avoid infinite log(area)
+
+log_frame = data.frame(FFMC_log= FFMC_log,ISI_log = ISI_log, rain_log= rain_log, area_log=area_log )
+log_moment= descr(log_frame)
+print(log_moment)
+
+```
+
+FFMC and rain are still having high skew and kurtosis values. We consider to remove the outliners in the two columns, using z-score method, to minimize the effect of outliers in the model.
+
+```{r}
+
+
+
+
+summary_table_removed  = descr(log_frame_removed)
+print(summary_table_removed)
+
+logname = names(log_frame)
+
+par(mfrow = c(2, 2))
+for (i in 1:4)
+{
+  title2 = paste("KDE plot of " , logname[i] )
+  kde = density(log_frame_removed[,i])
+  plot(kde, main = title2, xlab = logname[i], lwd = 2)
+}
+
+```
+
+# Section 3.1 
+
+# Simple Linear regression
+Let's do nothing on the data and fit a simple linear model. 
+
+```{r}
+reduced_data = forestfires[,-which(names(forestfires)=="severity")]
+varnames = names(reduced_data);
+
+fullmodel = lm( area +1 ~., data = reduced_data)
+
+model_summary = summary(fullmodel)
+fstat <- model_summary$fstatistic["value"]
+df1 <- model_summary$fstatistic["numdf"]
+df2 <- model_summary$fstatistic["dendf"]
+pvalue = 1 - pf(fstat, df1, df2)
+
+boxcox_model = lm( (2-2/sqrt(area+1)) ~., data = reduced_data)
+#boxcox_model = lm( sqrt(area + 1) ~., data = reduced_data)
+summary(boxcox_model)
+plot(boxcox_model)
+
+#robust_model = lmrob(area +1 ~., data = reduced_data)
+#summary(robust_model)
+#plot(robust_model)
+
+```
+
+```{r}
+rm(modeltest)
+pvalues = rep(0, times = length(varnames))
+modeltest = data.frame(name = varnames, pvalues = pvalues)
+i = 1
+
+for (x_var in varnames) {
+  if (x_var == "area"){
+    next
+  }
+  
+  data_copy = reduced_data[, -which(names(reduced_data) == x_var)]
+  
+  reduced_model = lm( log(area+1)~., data = data_copy)
+  results = anova(reduced_model,fullmodel)
+  modeltest$pvalues[i] = results$`Pr(>F)`[2]
+  i = i+1
+}
+
+# remove the variable from the data set that has the highest p-value
+idx_maxp = which.max(modeltest$pvalues)
+reduced_data = reduced_data[,-idx_maxp]
+varnames = varnames[-idx_maxp]
+
+fullmodel  = lm(log(area+1) ~., data = reduced_data)
+model_summary = summary(fullmodel)
+f_statistic <- model_summary$fstatistic["value"]
+df1 <- model_summary$fstatistic["numdf"]
+df2 <- model_summary$fstatistic["dendf"]
+p_value_f_test = 1 - pf(f_statistic, df1, df2)
+
+
+```
+
+
+
+```{r}
+plot(slr_allvar,which = 1)
+bptest(slr_allvar)
+#linearity_mod = lm(abs(slr_allvar$residuals)~slr_allvar$fitted.values  + I(slr_allvar$fitted.values^2) + I(slr_allvar$fitted.values^4))
+#summary(linearity_mod)
+```
+
+According to the plot, with the presence of outliars, we concluded the homoscedasticify of the data.
+
+
+```{r}
+# normality check 
+plot(slr_allvar,which = 2)
+
+# error correlation check
+dwtest(slr_allvar)
+
+# model collinearity
+round(vif(slr_allvar), dig = 2)
+
+```
+
+```{r}
+var_names = names(forestfires)
+
+for (i in 1:12){
+  if (is.numeric(forestfires[,i]))
+  {
+    title3 = paste("Residuals vs. " , var_names[i])
+    plot(forestfires[,i], slr_allvar$residuals, main = title3, xlab = var_names[i], ylab = "Residuals", lwd = 2)
+  }
+  else {
+    next
+  }
+    
+}
+```
+
+```{r}
+
+fullmodel = lm(area~., data= train_data)
+
+nummodel = lm(area~.-month-day,data = train_data)
+
+nummodel2 = lm(area~.-X-Y,data = train_data)
+
+anova(nummodel,fullmodel)
+anova(nummodel2,fullmodel)
+
+#areapca= prcomp(train_data[,-13])
+#round(areapca$sdev,3)[1:50]
+
+```
