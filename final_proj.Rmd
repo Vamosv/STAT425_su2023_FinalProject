@@ -151,3 +151,180 @@ ggplot(data, aes(x=day)) +
   labs(title="Frequency Counts of Days", x="Day", y="Count")
 
 ```
+
+## ML
+
+
+
+```{r}
+# Load necessary packages
+
+library(randomForest)
+library(dplyr)
+library(caret)
+
+# Load the data
+forest_fire_data <- read.csv("forestfires.csv")
+df <- forest_fire_data
+# Preprocess the data
+
+# Convert categorical variables to factors
+forest_fire_data$month <- as.factor(forest_fire_data$month)
+forest_fire_data$day <- as.factor(forest_fire_data$day)
+```
+
+```{r}
+# Log transform
+df$area <- log(1 + df$area)
+
+# Creating bins in the target, to stratify in train/test split
+df$area_bin <- cut(df$area, breaks = 5)
+
+# Dropping the 'area' column from the dataframe to create the predictors dataframe 'X'
+X <- df[, !(names(df) %in% "area")]
+
+# Creating the target variable 'y'
+y <- df$area
+
+```
+
+split the dataset:
+```{r}
+# Set the seed for reproducibility
+set.seed(99)
+
+# Split the data into training and test sets
+index <- createDataPartition(df$area_bin, p = 0.7, list = FALSE)
+X_train <- X[index, ]
+Y_train <- y[index]
+X_test <- X[-index, ]
+Y_test <- y[-index]
+
+# Drop the 'area_bin' column from the training and test sets
+X_train$area_bin <- NULL
+X_test$area_bin <- NULL
+
+```
+We will compare a ML model (Random Forest or "RF") to our base model (Linear Regression) using the basic metrics Root Mean Square Error.
+The description of Random Forest will be disclosed later.
+
+First we take a look at the base model, which is our linear regression:
+```{r}
+# Load necessary libraries
+library(Metrics)
+
+# Fit the linear regression model
+lr <- lm(Y_train ~ ., data = X_train)
+
+# Make predictions and transform them back using exp
+y_pred_test <- exp(predict(lr, newdata = X_test)) - 1
+
+# Compute the RMSE for the test set
+rmse_test <- sqrt(mean((exp(Y_test) - 1 - y_pred_test)^2))
+
+# Compute the MAE for the test set
+mae_test <- mean(abs(exp(Y_test) - 1 - y_pred_test))
+
+# Print RMSE and MAE for the test set
+print(paste0("Test set RMSE: ", round(rmse_test, 2)))
+print(paste0("Test set MAE: ", round(mae_test, 2)))
+
+# Predict on the training set
+y_pred_train <- exp(predict(lr, newdata = X_train)) - 1
+
+# Compute the RMSE for the training set
+rmse_train <- sqrt(mean((exp(Y_train) - 1 - y_pred_train)^2))
+
+# Print RMSE for the training set
+print(paste0("Train RMSE: ", round(rmse_train, 2)))
+
+```
+Then we will use RF.
+
+First we use grid search to do the hyperparameter searching:
+```{r}
+# Load necessary libraries
+library(caret)
+library(randomForest)
+set.seed(22)
+# Set up train control
+ctrl <- trainControl(method = "cv", number = 10)
+
+# Define the grid for the tuning parameters
+grid <- expand.grid(
+  mtry = c(2, 3, 4),  # Number of variables available for splitting at each tree node
+  splitrule = "variance",
+  min.node.size = c(1, 3, 5)  # Minimum number of observations that must exist in a node in order for a split to be attempted
+)
+
+# Combine X_train and Y_train into a single dataframe
+train_data <- cbind(Y_train, X_train)
+
+# Run the model with the combined dataframe
+model <- train(
+  Y_train ~ ., 
+  data = train_data, 
+  method = "ranger", 
+  trControl = ctrl, 
+  tuneGrid = grid
+)
+#rf_model <- randomForest(target ~ ., data = df, ntree = 500)
+
+# Print the best tuning parameters
+print(model$bestTune)
+
+#print(model)
+```
+In the context of Random Forests, mtry is a tuning parameter that specifies the number of variables randomly sampled as candidates at each split.
+
+The splitrule parameter in a Random Forest algorithm specifies the rule or metric used to decide on the best split at each node in the decision tree.
+
+There are several options for the splitrule parameter:
+
+"gini": Uses the Gini impurity to measure the quality of a split. The Gini impurity measures the degree or probability of a particular variable being wrongly classified when it is randomly chosen. This is the default for classification tasks.
+
+"variance": Used for regression tasks. It measures the quality of a split by computing the reduction in variance of the response variable.
+
+"auc": It measures the quality of a split by computing the Area Under the Receiver Operating Characteristic Curve (AUC-ROC).
+
+The grid search gives us "variance".
+
+The min.node.size parameter in a Random Forest algorithm determines the minimum number of observations that must exist in a node for a split to be attempted.
+
+In simple terms, if you set min.node.size to 5, for example, it means that any subset of your data with less than 5 instances won't be split any further. This is a way to control overfitting because it prevents the model from learning too much detail from the training data.
+
+The we use the tuned hyperparameters to build our Random Forest Model:
+```{r}
+library(randomForest)
+library(Metrics)
+
+# Fit the Random Forest Model
+rf <- randomForest(Y_train ~ ., data = train_data, ntree = 500, mtry = 2, 
+                   nodesize = 3, maxnodes = 10)
+test_data <- rbind(X_test, Y_test)
+
+
+# Make predictions
+pred_train <- exp(predict(rf, train_data)) - 1
+pred_test <- exp(predict(rf, test_data)) - 1
+
+# Compute RMSE
+rmse_train <- rmse(pred_train, exp(train_data$Y_train) - 1)
+rmse_test <- rmse(pred_test, exp(Y_test) - 1)
+
+print(paste("Train RMSE: ", rmse_train))
+print(paste("Test RMSE: ", rmse_test))
+
+# Compute MAE
+mae_test <- mae(pred_test, exp(Y_test) - 1)
+print(paste("Test MAE: ", mae_test))
+
+
+# Feature importance
+importance <- importance(rf)
+varImpPlot(rf)
+
+```
+The results show that the RMSE from RF is slightly smaller than that of Linear Regression.
+The important variables for predicting forest fire are shown above.
+
